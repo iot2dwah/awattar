@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Strompreise für die nächsten 24 Stunden</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        #title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .time-slot {
+            margin: 15px 0;
+        }
+
+        #priceChart {
+            max-width: 80%;
+            height: auto;
+            margin-bottom: 20px;
+        }
+
+        #additional-info {
+            max-width: 80%;
+            margin-bottom: 20px;
+        }
+
+        #current-time {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .bold {
+            font-weight: bold;
+        }
+
+        footer {
+            text-align: center;
+            font-size: 16px;
+            margin-top: auto;
+            padding: 10px 0;
+            width: 100%;
+            background-color: #f3f3f3;
+        }
+
+        @media (max-width: 600px) {
+            #additional-info, #current-time {
+                width: 90%;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+ </head>
+<body>
+    <div id="title">Strompreise für die nächsten 24 Stunden</div>
+    <div id="cheapest-time" class="time-slot"></div>
+    <div id="most-expensive-time" class="time-slot"></div>
+    <canvas id="priceChart"></canvas>
+    <div id="additional-info">
+        Die Preise sind inkl 20% Mwst und werden täglich um ca 14:00 Uhr für die nächsten 24 Stunden aktualisiert. Datenquellen sind EPEX Spot und Awattar Österreich. Der Berechnungszeitraum für die billigste und teuerste Zeit sind 3 Stunden und deren Durchschittspreis. Angaben ohne Gewähr.
+    </div>
+    <div id="current-time"></div>
+    <footer>
+        <div>GNU public license</div>
+    </footer>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchTimeSlotsAndDrawChart();
+            setCurrentTime();
+        });
+        // Fetch Data from awattar austria API. For Awattar Germany edit below API Link
+        function fetchTimeSlotsAndDrawChart() {
+            fetch('https://api.awattar.at/v1/marketdata')
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.data) {
+                        const now = new Date();
+                        const today = now.getDate();
+                        const prices = data.data.map(entry => ({
+                            time: new Date(entry.start_timestamp),
+                            price: (entry.marketprice / 10) * 1.20
+                        }));
+
+                        const chartLabels = prices.map(entry => `${entry.time.getHours()}:00`);
+                        const chartData = prices.map(entry => entry.price.toFixed(2));
+
+                        drawChart(chartLabels, chartData);
+
+                        displayTimeSlots(prices, today);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching data: ', error);
+                });
+        }
+
+        function displayTimeSlots(prices, today) {
+            let cheapest = findTimeSlot(prices, Math.min);
+            let mostExpensive = findTimeSlot(prices, Math.max);
+
+            updateSlotInfo('cheapest-time', cheapest, today, 'Billigste');
+            updateSlotInfo('most-expensive-time', mostExpensive, today, 'Teuerste');
+        }
+
+        function findTimeSlot(prices, comparator) {
+            return prices.reduce((slot, _, i, arr) => {
+                if (i > arr.length - 3) return slot;
+                let avgPrice = (arr[i].price + arr[i + 1].price + arr[i + 2].price) / 3;
+                return comparator(avgPrice, slot.avgPrice) === avgPrice ? { start: arr[i].time, end: arr[i + 2].time, avgPrice } : slot;
+            }, { avgPrice: comparator === Math.min ? Number.MAX_VALUE : 0 });
+        }
+
+        function updateSlotInfo(elementId, slot, today, label) {
+            const dayLabel = slot.start.getDate() === today ? 'heute' : 'morgen';
+            const formatTime = date => `<span class="bold">${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}</span>`;
+            document.getElementById(elementId).innerHTML = 
+                `${label} Zeit ${dayLabel} von ${formatTime(slot.start)} Uhr bis ${formatTime(slot.end)} Uhr zum Durchschnittspreis von <span class="bold">${slot.avgPrice.toFixed(2)}</span> Cent/kWh`;
+        }
+        // Draw the barchart
+        function drawChart(labels, data) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Preis in Cent/kWh',
+                        data: data,
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+        // Function to sete date and time
+        function setCurrentTime() {
+            const currentTimeElem = document.getElementById('current-time');
+            currentTimeElem.innerHTML = `<span class="bold">${new Date().toLocaleString()}</span>`;
+            setTimeout(setCurrentTime, 1000);
+        }
+    </script>
+</body>
+</html>
